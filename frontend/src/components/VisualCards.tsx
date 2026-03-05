@@ -8,3 +8,11 @@ interface CardData {
   imageUrl: string;
   difficultyLevel: string;
 }
+
+const VisualCards: React.FC = () => {
+  // State Management
+  const [cards, setCards] = useState<CardData[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null)
