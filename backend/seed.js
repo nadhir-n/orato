@@ -1,5 +1,8 @@
-const mongoose = require('mongoose');
-const Card = require('./src/models/Card'); // Make sure this path points to your model
+import mongoose from 'mongoose';
+import Card from './src/models/Card.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/english_learning_db';
 

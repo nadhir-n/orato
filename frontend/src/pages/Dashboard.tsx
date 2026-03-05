@@ -10,7 +10,6 @@ import ContinueLearning from "../components/ContinueLearning";
 import DailyChallenges from "../components/DailyChallenges";
 import SkillProgress from "../components/SkillProgress";
 import RecentAchievements from "../components/RecentAchievements";
-
 import SpeakingCoach from "../components/SpeakingCoach";
 
 const Dashboard: React.FC = () => {
