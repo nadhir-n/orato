@@ -1,5 +1,7 @@
 console.log("Cloudinary Key:", process.env.CLOUDINARY_API_KEY);
 
+console.log("Cloudinary Key:", process.env.CLOUDINARY_API_KEY);
+
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -16,6 +18,7 @@ import userRoutes from "./routes/user-routes.js";
 import assessmentRoutes from "./routes/assessment-routes.js";
 import settingsRoutes from "./routes/settings.routes.js";
 import progressRoutes from "./routes/progress-routes.js";
+import chatRoutes from "./routes/chat-routes.js";
 import { verifyEmailConfig } from "./services/emailService.js";
 import protect from "./middleware/authMiddleware.js";
 
@@ -70,6 +73,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/assessment", assessmentRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/progress", progressRoutes);
+app.use("/api/chat", chatRoutes);
 
 // Protected route test
 app.get("/api/protected", protect, (req, res) => {
