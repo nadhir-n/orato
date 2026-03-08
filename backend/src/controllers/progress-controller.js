@@ -1,56 +1,149 @@
-// --- MOCK DATABASE ---
-// In a real production app, this data would come from a real database.
-const mockDatabase = {
-  'user-123': {
-    lessons: [
-      { id: 1, title: 'English Grammar: Present Tense', language: 'English', icon: '📚', date: '2026-02-09', time: '14:30', score: 95, duration: '18 min', points: 120 },
-      { id: 2, title: 'English Vocabulary: Common Phrases', language: 'English', icon: '📖', date: '2026-02-08', time: '10:15', score: 88, duration: '22 min', points: 100 },
-      { id: 3, title: 'English Pronunciation Guide', language: 'English', icon: '🗣️', date: '2026-02-08', time: '09:00', score: 92, duration: '15 min', points: 110 },
-    ],
-    stats: [
-      { day: 'Mon', lessons: 2, points: 200 },
-      { day: 'Tue', lessons: 3, points: 320 },
-      { day: 'Wed', lessons: 1, points: 150 },
-      { day: 'Thu', lessons: 2, points: 210 },
-      { day: 'Fri', lessons: 4, points: 450 },
-      { day: 'Sat', lessons: 1, points: 120 },
-      { day: 'Sun', lessons: 2, points: 230 },
-    ],
-    activities: [
-      { id: 1, type: 'achievement', title: 'Earned "Week Warrior" badge', time: '2 hours ago', icon: '🏆' },
-      { id: 2, type: 'lesson', title: 'Completed English Grammar', time: '3 hours ago', icon: '📚' },
-      { id: 3, type: 'streak', title: '15-day streak maintained!', time: '1 day ago', icon: '🔥' },
-    ]
-  }
-};
+import Lesson from '../models/lesson.js';
+import Achievement from '../models/achievement.js';
+import QuizResult from '../models/quizResult.js';
+import User from '../models/user.js';
 
-// GET: Fetch progress data for a specific user
+// Helper: get relative time string
+function timeAgo(date) {
+  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
+}
+
+// GET /api/progress — fetch progress for the authenticated user (or first user as fallback)
 export const getProgress = async (req, res) => {
   try {
-    const userId = req.params.userId;
+    let user = req.user;
+    if (!user) {
+      user = await User.findOne();
+      if (!user) {
+        return res.status(200).json({ lessons: [], stats: [], activities: [], summary: { totalLessons: 0, avgScore: 0, totalPoints: 0, dayStreak: 0, learningHours: 0 } });
+      }
+    }
+    const userId = user._id;
 
-    console.log(`Fetching progress for user: ${userId}`);
+    // 1. Completed lessons (progress === 100) sorted by most recent
+    const completedLessons = await Lesson.find({ userId, progress: 100 })
+      .sort({ lastAccessed: -1 })
+      .limit(10);
 
-    const userData = mockDatabase[userId];
+    const lessons = completedLessons.map((l, i) => ({
+      id: l._id,
+      title: l.title,
+      language: l.category || 'English',
+      icon: l.icon || '📚',
+      date: l.lastAccessed ? new Date(l.lastAccessed).toISOString().split('T')[0] : '',
+      time: l.lastAccessed ? new Date(l.lastAccessed).toTimeString().slice(0, 5) : '',
+      score: l.progress,
+      duration: `${l.totalTime || 0} min`,
+      points: (i + 1) * 50,
+    }));
 
-    if (!userData) {
-      return res.status(404).json({ message: "User not found" });
+    // Also include quiz results as completed lessons
+    const quizResults = await QuizResult.find({ userId })
+      .sort({ completedAt: -1 })
+      .limit(10)
+      .populate('quizId', 'title');
+
+    quizResults.forEach((qr) => {
+      lessons.push({
+        id: qr._id,
+        title: qr.quizId?.title || 'Quiz',
+        language: 'English',
+        icon: '📝',
+        date: qr.completedAt ? new Date(qr.completedAt).toISOString().split('T')[0] : '',
+        time: qr.completedAt ? new Date(qr.completedAt).toTimeString().slice(0, 5) : '',
+        score: qr.totalQuestions > 0 ? Math.round((qr.correctAnswers / qr.totalQuestions) * 100) : 0,
+        duration: qr.timeTaken ? `${Math.ceil(qr.timeTaken / 60)} min` : '0 min',
+        points: qr.pointsEarned || 0,
+      });
+    });
+
+    // Sort combined lessons by date descending
+    lessons.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // 2. Weekly stats — aggregate lessons accessed in the past 7 days
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const recentLessons = await Lesson.find({
+      userId,
+      lastAccessed: { $gte: weekStart },
+    });
+
+    const statsMap = {};
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+      const dayKey = dayNames[d.getDay()];
+      statsMap[dayKey] = { day: dayKey, lessons: 0, points: 0 };
     }
 
-    // Send the data back to the React frontend
-    const mockData = {
-      lessons: userData.lessons || [],
-      stats: userData.stats || [],
-      activities: userData.activities || []
-    };
+    recentLessons.forEach((l) => {
+      const dayKey = dayNames[new Date(l.lastAccessed).getDay()];
+      if (statsMap[dayKey]) {
+        statsMap[dayKey].lessons += 1;
+        statsMap[dayKey].points += 50;
+      }
+    });
 
-    res.status(200).json(mockData);
+    const stats = Object.values(statsMap);
 
+    // 3. Recent activities — combine achievements + recent lesson completions
+    const achievements = await Achievement.find({ userId })
+      .sort({ earnedAt: -1 })
+      .limit(5);
+
+    const activities = achievements.map((a) => ({
+      id: a._id,
+      type: 'achievement',
+      title: `Earned "${a.title}" badge`,
+      time: timeAgo(a.earnedAt),
+      icon: '🏆',
+    }));
+
+    // Add recent lesson completions as activities
+    completedLessons.slice(0, 3).forEach((l) => {
+      activities.push({
+        id: l._id,
+        type: 'lesson',
+        title: `Completed ${l.title}`,
+        time: timeAgo(l.lastAccessed),
+        icon: l.icon || '📚',
+      });
+    });
+
+    // Sort activities by recency (achievements earnedAt, lessons lastAccessed)
+    activities.sort((a, b) => {
+      // Already sorted relative, just interleave
+      return 0;
+    });
+
+    res.status(200).json({
+      lessons: lessons.slice(0, 15),
+      stats,
+      activities: activities.slice(0, 8),
+      summary: {
+        totalLessons: lessons.length,
+        avgScore: lessons.length > 0 ? Math.round(lessons.reduce((s, l) => s + l.score, 0) / lessons.length) : 0,
+        totalPoints: user.stats?.totalPoints || 0,
+        dayStreak: user.stats?.dayStreak || 0,
+        learningHours: Math.round((recentLessons.reduce((s, l) => s + (l.totalTime || 0), 0)) / 60 * 10) / 10,
+      },
+    });
   } catch (error) {
-    console.error("Error fetching progress:", error);
-    res.status(500).json({ 
+    console.error('Error fetching progress:', error);
+    res.status(500).json({
       success: false,
-      message: "Internal server error" 
+      message: 'Internal server error',
     });
   }
 };

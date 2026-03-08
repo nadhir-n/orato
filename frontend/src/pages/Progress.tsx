@@ -58,12 +58,21 @@ const StatCard = ({ icon: Icon, value, label, colorClass, darkMode }: any) => (
   </div>
 );
 
+interface Summary {
+  totalLessons: number;
+  avgScore: number;
+  totalPoints: number;
+  dayStreak: number;
+  learningHours: number;
+}
+
 export default function Progress() {
   const darkMode = false;
   // --- STATE MANAGEMENT ---
   const [completedLessons, setCompletedLessons] = useState<Lesson[]>([]);
   const [weeklyStats, setWeeklyStats] = useState<StatItem[]>([]);
   const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
+  const [summary, setSummary] = useState<Summary>({ totalLessons: 0, avgScore: 0, totalPoints: 0, dayStreak: 0, learningHours: 0 });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,16 +83,21 @@ export default function Progress() {
         setIsLoading(true);
         setError(null);
 
-        const response = await API.get('/progress/user-123');
+        const response = await API.get('/progress');
         const data = response.data;
 
-        setCompletedLessons(data.lessons);
-        setWeeklyStats(data.stats);
-        setRecentActivities(data.activities);
+        setCompletedLessons(data.lessons || []);
+        setWeeklyStats(data.stats || []);
+        setRecentActivities(data.activities || []);
+        if (data.summary) setSummary(data.summary);
 
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to fetch progress data:", err);
-        setError("Unable to load progress data. Please try again later.");
+        if (err?.response?.status === 401) {
+          setError("Please log in to view your progress.");
+        } else {
+          setError("Unable to load progress data. Please try again later.");
+        }
       } finally {
         setIsLoading(false);
       }
@@ -96,12 +110,6 @@ export default function Progress() {
     if (weeklyStats.length === 0) return 1;
     return Math.max(...weeklyStats.map((d) => d.lessons));
   }, [weeklyStats]);
-
-  const avgScore = useMemo(() => {
-    if (completedLessons.length === 0) return 0;
-    const total = completedLessons.reduce((acc, curr) => acc + curr.score, 0);
-    return Math.round(total / completedLessons.length);
-  }, [completedLessons]);
 
   if (isLoading) {
     return (
@@ -151,19 +159,19 @@ export default function Progress() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
           <StatCard 
-            icon={BookOpen} value={completedLessons.length.toString()} label="Total Lessons" 
+            icon={BookOpen} value={summary.totalLessons.toString()} label="Total Lessons" 
             colorClass="bg-blue-500/10 text-blue-500" darkMode={darkMode} 
           />
           <StatCard 
-            icon={Trophy} value={`${avgScore}%`} label="Avg. Accuracy" 
+            icon={Trophy} value={`${summary.avgScore}%`} label="Avg. Accuracy" 
             colorClass="bg-yellow-500/10 text-yellow-500" darkMode={darkMode} 
           />
           <StatCard 
-            icon={Clock} value="47.5h" label="Learning Hours" 
+            icon={Clock} value={`${summary.learningHours}h`} label="Learning Hours" 
             colorClass="bg-purple-500/10 text-purple-500" darkMode={darkMode} 
           />
           <StatCard 
-            icon={TrendingUp} value="Level 12" label="Current Rank" 
+            icon={TrendingUp} value={`${summary.dayStreak} days`} label="Day Streak" 
             colorClass="bg-green-500/10 text-green-500" darkMode={darkMode} 
           />
         </div>
